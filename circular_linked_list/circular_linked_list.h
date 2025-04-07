@@ -1,4 +1,4 @@
-pragma once
+#pragma once
 #include <stdlib.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -12,7 +12,7 @@ pragma once
         TYPE data; \
         struct Node_##TYPE* next; \
     } Node_##TYPE; \
-    Node_##TYPE* node_##TYPE##__create(TYPE);\
+    Node_##TYPE* node_##TYPE##_create(TYPE);\
     Node_##TYPE* node_##TYPE##_destroy(Node_##TYPE*);\
     \
     typedef struct { \
@@ -28,13 +28,15 @@ pragma once
     bool list_##TYPE##_remove_at(List_##TYPE* list, size_t pos); \
     bool list_##TYPE##_get(const List_##TYPE* list, size_t pos, TYPE* out); \
     size_t list_##TYPE##_length(const List_##TYPE* list); \
-    void list_##TYPE##_print(const List_##TYPE* list, void (*print_fn)(TYPE));
+    void list_##TYPE##_print(const List_##TYPE* list, void (*print_fn)(TYPE)); \
+    bool list_##TYPE##_contains(const List_##TYPE* list, TYPE data); \
+    bool list_##TYPE##_remove(List_##TYPE* list, TYPE data);
 
 // ----------------------------
 // Macro para implementación
 // ----------------------------
 #define IMPLEMENT_LINKED_LIST(TYPE) \
-    Node_##TYPE* node_##TYPE##__create(TYPE data){\
+    Node_##TYPE* node_##TYPE##_create(TYPE data){\
         Node_##TYPE* new_node = malloc(sizeof(Node_##TYPE)); \
         new_node->data = data;\
         new_node->next = NULL;\
@@ -57,13 +59,15 @@ pragma once
     } \
     \
     void list_##TYPE##_destroy(List_##TYPE* list) { \
-        if (!list) return; \
+        if (!list || !list->head) return; \
         Node_##TYPE* current = list->head; \
-        while (current) { \
-            Node_##TYPE* temp = current; \
-            current = current->next; \
-            free(temp); \
-        } \
+    do { \
+        Node_##TYPE* temp = current; \
+        current = current->next; \
+        free(temp); \
+    } while (current != list->head);\
+    list->head = list->tail = NULL; \
+    list->length = 0; \
         free(list); \
     } \
     \
@@ -71,14 +75,19 @@ pragma once
         if (!list || pos > list->length) return false; \
         \
         Node_##TYPE* new_node = node_##TYPE##_create(data); \
-        if (!new_node) return false; \        
+        if (!new_node) return false; \
         \
         if (pos == 0) { \
             new_node->next = list->head; \
             list->head = new_node; \
-            if (!list->tail) list->tail = new_node; \
+            if (!list->tail) { \
+                list->tail = new_node; \
+                new_node->next = new_node; \
+            } else { \
+                list->tail->next = list->head; \
+            } \
         } else if (pos == list->length) { \
-            new_node->next = NULL; \
+            new_node->next = list->head; \
             list->tail->next = new_node; \
             list->tail = new_node; \
         } else { \
@@ -105,8 +114,12 @@ pragma once
         \
         if (pos == 0) { \
             to_delete = list->head; \
-            list->head = list->head->next; \
-            if (!list->head) list->tail = NULL; \
+            if (list->length == 1) { \
+                list->head = list->tail = NULL; \
+            } else { \
+                list->head = list->head->next; \
+                list->tail->next = list->head; \
+            }\
         } else { \
             Node_##TYPE* current = list->head; \
             for (size_t i = 0; i < pos - 1; ++i) { \
@@ -116,7 +129,8 @@ pragma once
             current->next = to_delete->next; \
             if (pos == list->length - 1) { \
                 list->tail = current; \
-            } \
+                list->tail->next = list->head; \
+            }\
         } \
         \
         free(to_delete); \
@@ -145,14 +159,13 @@ pragma once
     } \
     \
     void list_##TYPE##_clear(List_##TYPE* list) { \
-        if (!list) return; \
-        \
+        if (!list || !list->head) return; \
         Node_##TYPE* current = list->head; \
-        while (current) { \
+        do { \
             Node_##TYPE* temp = current; \
             current = current->next; \
             free(temp); \
-        } \
+        } while (current != list->head);\
         \
         list->head = list->tail = NULL; \
         list->length = 0; \
@@ -161,48 +174,56 @@ pragma once
     void list_##TYPE##_print(const List_##TYPE* list, void (*print_fn)(TYPE)) { \
         if (!list || !print_fn) return; \
         \
+        if (!list->head) { \
+            printf("[]\n"); \
+            return; \
+        } \
+        \
         printf("["); \
         Node_##TYPE* current = list->head; \
-        while (current) { \
+        size_t i = 0; \
+        do { \
             print_fn(current->data); \
-            if (current->next) printf(", "); \
+            if (++i < list->length) printf(", "); \
             current = current->next; \
-        } \
+        } while (current != list->head); \
         printf("]\n"); \
     } \
     \
     bool list_##TYPE##_contains(const List_##TYPE* list, TYPE data) { \
-        if (!list) return false; \
+        if (!list || !list->head) return false; \
         \
         Node_##TYPE* current = list->head; \
-        while (current) { \
+        do { \
             if (current->data == data) { \
                 return true; \
             } \
             current = current->next; \
-        } \
+        } while (current != list->head); \
         \
         return false; \
     } \
     \
     bool list_##TYPE##_remove(List_##TYPE* list, TYPE data) { \
-        if (!list) return false; \
+        if (!list || !list->head) return false; \
         \
-        Node_##TYPE* prev = NULL; \
         Node_##TYPE* current = list->head; \
+        Node_##TYPE* prev = list->tail; \
         \
-        while (current) { \
+        do { \
             if (current->data == data) { \
-                if (prev) { \
-                    prev->next = current->next; \
-                    if (!current->next) { \
-                        list->tail = prev; \
-                    } \
-                } else { \
+                if (current == list->head) { \
                     list->head = current->next; \
-                    if (!list->head) { \
-                        list->tail = NULL; \
+                    if (list->length == 1) { \
+                        list->head = list->tail = NULL; \
+                    } else { \
+                        list->tail->next = list->head; \
                     } \
+                } else if (current == list->tail) { \
+                    list->tail = prev; \
+                    list->tail->next = list->head; \
+                } else { \
+                    prev->next = current->next; \
                 } \
                 \
                 free(current); \
@@ -212,7 +233,7 @@ pragma once
             \
             prev = current; \
             current = current->next; \
-        } \
+        } while (current != list->head); \
         \
         return false; \
     }
@@ -227,7 +248,7 @@ DECLARE_LINKED_LIST(float)
 // ----------------------------
 // Implementación para tipos concretos
 // ----------------------------
-#ifdef LINKED_LIST_IMPLEMENTATION
+#ifdef CIRCULAR_LINKED_LIST_IMPLEMENTATION
 IMPLEMENT_LINKED_LIST(int)
 IMPLEMENT_LINKED_LIST(char)
 IMPLEMENT_LINKED_LIST(float)
